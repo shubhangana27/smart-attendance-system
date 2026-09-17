@@ -56,7 +56,6 @@ def process_attendance(image_path, profiles, output_csv):
     best_match = "Unknown"
     min_dist = float("inf")
 
-    # Measure Euclidean distance between feature representations
     for name, known_features in profiles.items():
         dist = np.linalg.norm(test_features - known_features)
         if dist < min_dist:
@@ -64,7 +63,11 @@ def process_attendance(image_path, profiles, output_csv):
             best_match = name
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    records = [{"Name": best_match, "Timestamp": timestamp}]
+    records = [{
+        "Name": best_match,
+        "Timestamp": timestamp,
+        "Confidence_Score": round(float(min_dist), 2)
+    }]
 
     df = pd.DataFrame(records)
     if os.path.exists(output_csv):
@@ -73,7 +76,7 @@ def process_attendance(image_path, profiles, output_csv):
         df.to_csv(output_csv, index=False)
 
     print(
-        f"[SUCCESS] Identified match: '{best_match}'. Logged to '{output_csv}'."
+        f"[SUCCESS] Identified match: '{best_match}' (Distance: {min_dist:.2f}). Logged to '{output_csv}'."
     )
 
 
