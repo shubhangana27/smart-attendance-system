@@ -18,6 +18,16 @@ def extract_features(img_gray):
     return norm_mag.flatten()
 
 
+def validate_image(path):
+    if not os.path.exists(path):
+        print(f"[ERROR] File does not exist at '{path}'")
+        return False
+    if not path.lower().endswith((".jpg", ".png", ".jpeg")):
+        print(f"[ERROR] Unsupported file format for '{path}'")
+        return False
+    return True
+
+
 def load_known_profiles(known_dir):
     profiles = {}
 
@@ -42,6 +52,9 @@ def load_known_profiles(known_dir):
 
 
 def process_attendance(image_path, profiles, output_csv):
+    if not validate_image(image_path):
+        return
+
     if not profiles:
         print("[ERROR] No known profiles available for matching.")
         return
@@ -56,6 +69,7 @@ def process_attendance(image_path, profiles, output_csv):
     best_match = "Unknown"
     min_dist = float("inf")
 
+    # Measure Euclidean distance between feature representations
     for name, known_features in profiles.items():
         dist = np.linalg.norm(test_features - known_features)
         if dist < min_dist:
@@ -63,14 +77,38 @@ def process_attendance(image_path, profiles, output_csv):
             best_match = name
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Check for duplicate entry on the same date
+    if os.path.exists(output_csv):
+        try:
+            existing_df = pd.read_csv(output_csv)
+            today = datetime.now().strftime("%Y-%m-%d")
+
+            if (
+                "Name" in existing_df.columns
+                and "Timestamp" in existing_df.columns
+            ):
+                duplicate = existing_df[
+                    (existing_df["Name"] == best_match)
+                    & (existing_df["Timestamp"].astype(str).str.startswith(today))
+                ]
+
+                if not duplicate.empty:
+                    print(
+                        f"[INFO] Attendance already logged today for '{best_match}'. Skipping duplicate."
+                    )
+                    return
+        except Exception as e:
+            pass  # Fallback if CSV is empty or malformed
+
     records = [{
         "Name": best_match,
         "Timestamp": timestamp,
-        "Confidence_Score": round(float(min_dist), 2)
+        "Confidence_Score": round(float(min_dist), 2),
     }]
 
     df = pd.DataFrame(records)
-    if os.path.exists(output_csv):
+    if os.path.exists(output_csv) and os.path.getsize(output_csv) > 0:
         df.to_csv(output_csv, mode="a", header=False, index=False)
     else:
         df.to_csv(output_csv, index=False)
@@ -102,8 +140,17 @@ if __name__ == "__main__":
         default="attendance.csv",
         help="Path to output CSV log file",
     )
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Clear existing attendance log before running",
+    )
 
     args = parser.parse_args()
+
+    if args.clear and os.path.exists(args.output):
+        os.remove(args.output)
+        print(f"[INFO] Cleared existing log file at '{args.output}'.")
 
     known_profiles = load_known_profiles(args.known_dir)
     process_attendance(args.input, known_profiles, args.output)
